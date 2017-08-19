@@ -232,7 +232,7 @@ pub fn rewrite_macro(
                         context
                             .codemap
                             .span_after(mac.span, original_style.opener()),
-                        mac.span.hi - BytePos(1),
+                        mac.span.hi() - BytePos(1),
                     ),
                     context,
                     mac_shape,

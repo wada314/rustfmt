@@ -151,11 +151,11 @@ impl<'a> FmtVisitor<'a> {
         if !item.body.is_empty() || contains_comment(&snippet[brace_pos..]) {
             // FIXME: this skips comments between the extern keyword and the opening
             // brace.
-            self.last_pos = item.span.lo + BytePos(brace_pos as u32 + 1);
+            self.last_pos = item.span.lo() + BytePos(brace_pos as u32 + 1);
             self.block_indent = self.block_indent.block_indent(self.config);
 
             if item.body.is_empty() {
-                self.format_missing_no_indent(item.span.hi - BytePos(1));
+                self.format_missing_no_indent(item.span.hi() - BytePos(1));
                 self.block_indent = self.block_indent.block_unindent(self.config);
 
                 self.buffer
@@ -166,12 +166,12 @@ impl<'a> FmtVisitor<'a> {
                 }
 
                 self.block_indent = self.block_indent.block_unindent(self.config);
-                self.format_missing_with_indent(item.span.hi - BytePos(1));
+                self.format_missing_with_indent(item.span.hi() - BytePos(1));
             }
         }
 
         self.buffer.push_str("}");
-        self.last_pos = item.span.hi;
+        self.last_pos = item.span.hi();
     }
 
     fn format_body_element(&mut self, element: &BodyElement) {
@@ -190,7 +190,7 @@ impl<'a> FmtVisitor<'a> {
         let shape = Shape::indented(self.block_indent, self.config);
         let rewrite = item.rewrite(&self.get_context(), shape);
         self.push_rewrite(item.span(), rewrite);
-        self.last_pos = item.span.hi;
+        self.last_pos = item.span.hi();
     }
 
     pub fn rewrite_fn(
@@ -209,7 +209,7 @@ impl<'a> FmtVisitor<'a> {
     ) -> Option<String> {
         let context = self.get_context();
 
-        let block_snippet = self.snippet(mk_sp(block.span.lo, block.span.hi));
+        let block_snippet = self.snippet(mk_sp(block.span.lo(), block.span.hi()));
         let has_body = !block_snippet[1..block_snippet.len() - 1].trim().is_empty() ||
             !context.config.fn_empty_single_line();
         let mut newline_brace = newline_for_brace(self.config, &generics.where_clause, has_body);
@@ -262,7 +262,7 @@ impl<'a> FmtVisitor<'a> {
         span: Span,
     ) -> Option<String> {
         // Drop semicolon or it will be interpreted as comment.
-        let span = mk_sp(span.lo, span.hi - BytePos(1));
+        let span = mk_sp(span.lo(), span.hi() - BytePos(1));
         let context = self.get_context();
 
         let (mut result, _) = try_opt!(rewrite_fn_base(
@@ -354,7 +354,7 @@ impl<'a> FmtVisitor<'a> {
 
         let enum_snippet = self.snippet(span);
         let brace_pos = enum_snippet.find_uncommented("{").unwrap();
-        let body_start = span.lo + BytePos(brace_pos as u32 + 1);
+        let body_start = span.lo() + BytePos(brace_pos as u32 + 1);
         let generics_str = format_generics(
             &self.get_context(),
             generics,
@@ -363,7 +363,7 @@ impl<'a> FmtVisitor<'a> {
             self.config.item_brace_style(),
             enum_def.variants.is_empty(),
             self.block_indent,
-            mk_sp(span.lo, body_start),
+            mk_sp(span.lo(), body_start),
             last_line_width(&enum_header),
         ).unwrap();
         self.buffer.push_str(&generics_str);
@@ -371,13 +371,13 @@ impl<'a> FmtVisitor<'a> {
         self.last_pos = body_start;
 
         self.block_indent = self.block_indent.block_indent(self.config);
-        let variant_list = self.format_variant_list(enum_def, body_start, span.hi - BytePos(1));
+        let variant_list = self.format_variant_list(enum_def, body_start, span.hi() - BytePos(1));
         match variant_list {
             Some(ref body_str) => self.buffer.push_str(body_str),
             None => if contains_comment(&enum_snippet[brace_pos..]) {
-                self.format_missing_no_indent(span.hi - BytePos(1))
+                self.format_missing_no_indent(span.hi() - BytePos(1))
             } else {
-                self.format_missing(span.hi - BytePos(1))
+                self.format_missing(span.hi() - BytePos(1))
             },
         }
         self.block_indent = self.block_indent.block_unindent(self.config);
@@ -387,7 +387,7 @@ impl<'a> FmtVisitor<'a> {
                 .push_str(&self.block_indent.to_string(self.config));
         }
         self.buffer.push_str("}");
-        self.last_pos = span.hi;
+        self.last_pos = span.hi();
     }
 
     // Format the body of an enum definition
@@ -410,11 +410,11 @@ impl<'a> FmtVisitor<'a> {
             enum_def.variants.iter(),
             "}",
             |f| if !f.node.attrs.is_empty() {
-                f.node.attrs[0].span.lo
+                f.node.attrs[0].span.lo()
             } else {
-                f.span.lo
+                f.span.lo()
             },
-            |f| f.span.hi,
+            |f| f.span.hi(),
             |f| self.format_variant(f),
             body_lo,
             body_hi,
@@ -444,8 +444,8 @@ impl<'a> FmtVisitor<'a> {
     // Variant of an enum.
     fn format_variant(&self, field: &ast::Variant) -> Option<String> {
         if contains_skip(&field.node.attrs) {
-            let lo = field.node.attrs[0].span.lo;
-            let span = mk_sp(lo, field.span.hi);
+            let lo = field.node.attrs[0].span.lo();
+            let span = mk_sp(lo, field.span.hi());
             return Some(self.snippet(span));
         }
 
@@ -457,8 +457,8 @@ impl<'a> FmtVisitor<'a> {
             .node
             .attrs
             .last()
-            .map_or(field.span.lo, |attr| attr.span.hi);
-        let span = mk_sp(lo, field.span.lo);
+            .map_or(field.span.lo(), |attr| attr.span.hi());
+        let span = mk_sp(lo, field.span.lo());
 
         let variant_body = match field.node.data {
             ast::VariantData::Tuple(..) | ast::VariantData::Struct(..) => {
@@ -539,7 +539,7 @@ pub fn format_impl(
             context.config.where_density(),
             "{",
             where_span_end,
-            self_ty.span.hi,
+            self_ty.span.hi(),
             option,
         ));
 
@@ -590,14 +590,14 @@ pub fn format_impl(
         if !items.is_empty() || contains_comment(&snippet[open_pos..]) {
             let mut visitor = FmtVisitor::from_codemap(context.parse_session, context.config);
             visitor.block_indent = offset.block_only().block_indent(context.config);
-            visitor.last_pos = item.span.lo + BytePos(open_pos as u32);
+            visitor.last_pos = item.span.lo() + BytePos(open_pos as u32);
 
             visitor.visit_attrs(&item.attrs, ast::AttrStyle::Inner);
             for item in items {
                 visitor.visit_impl_item(item);
             }
 
-            visitor.format_missing(item.span.hi - BytePos(1));
+            visitor.format_missing(item.span.hi() - BytePos(1));
 
             let inner_indent_str = visitor.block_indent.to_string(context.config);
             let outer_indent_str = offset.block_only().to_string(context.config);
@@ -662,8 +662,8 @@ fn format_impl_ref_and_type(
 
         let lo = context.codemap.span_after(item.span, "impl");
         let hi = match *trait_ref {
-            Some(ref tr) => tr.path.span.lo,
-            None => self_ty.span.lo,
+            Some(ref tr) => tr.path.span.lo(),
+            None => self_ty.span.lo(),
         };
         let shape = try_opt!(generics_shape_from_config(
             context.config,
@@ -870,7 +870,7 @@ pub fn format_trait(context: &RewriteContext, item: &ast::Item, offset: Indent) 
             context,
             generics,
             shape,
-            mk_sp(item.span.lo, body_lo),
+            mk_sp(item.span.lo(), body_lo),
         ));
         result.push_str(&generics_str);
 
@@ -912,14 +912,14 @@ pub fn format_trait(context: &RewriteContext, item: &ast::Item, offset: Indent) 
         let pos_before_where = if type_param_bounds.is_empty() {
             if generics.where_clause.predicates.is_empty() {
                 // We do not use this, so it does not matter
-                item.span.lo
+                item.span.lo()
             } else {
                 let snippet = context.snippet(item.span);
                 let where_pos = snippet.find_uncommented("where");
-                item.span.lo + where_pos.map_or(BytePos(0), |p| BytePos(p as u32))
+                item.span.lo() + where_pos.map_or(BytePos(0), |p| BytePos(p as u32))
             }
         } else {
-            type_param_bounds[type_param_bounds.len() - 1].span().hi
+            type_param_bounds[type_param_bounds.len() - 1].span().hi()
         };
         let option = WhereClauseOption::snuggled(&generics_str);
         let where_clause_str = try_opt!(rewrite_where_clause(
@@ -969,13 +969,13 @@ pub fn format_trait(context: &RewriteContext, item: &ast::Item, offset: Indent) 
         if !trait_items.is_empty() || contains_comment(&snippet[open_pos..]) {
             let mut visitor = FmtVisitor::from_codemap(context.parse_session, context.config);
             visitor.block_indent = offset.block_only().block_indent(context.config);
-            visitor.last_pos = item.span.lo + BytePos(open_pos as u32);
+            visitor.last_pos = item.span.lo() + BytePos(open_pos as u32);
 
             for item in trait_items {
                 visitor.visit_trait_item(item);
             }
 
-            visitor.format_missing(item.span.hi - BytePos(1));
+            visitor.format_missing(item.span.hi() - BytePos(1));
 
             let inner_indent_str = visitor.block_indent.to_string(context.config);
             let outer_indent_str = offset.block_only().to_string(context.config);
@@ -1027,7 +1027,7 @@ pub fn format_struct_struct(
             context.config.item_brace_style(),
             fields.is_empty(),
             offset,
-            mk_sp(span.lo, body_lo),
+            mk_sp(span.lo(), body_lo),
             last_line_width(&result),
         )),
         None => {
@@ -1063,7 +1063,7 @@ pub fn format_struct_struct(
     }
 
     if fields.is_empty() {
-        let snippet = context.snippet(mk_sp(body_lo, span.hi - BytePos(1)));
+        let snippet = context.snippet(mk_sp(body_lo, span.hi() - BytePos(1)));
         if snippet.trim().is_empty() {
             // `struct S {}`
         } else if snippet.trim_right_matches(&[' ', '\t'][..]).ends_with('\n') {
@@ -1091,7 +1091,7 @@ pub fn format_struct_struct(
         fields,
         context,
         Shape::indented(offset, context.config),
-        mk_sp(body_lo, span.hi),
+        mk_sp(body_lo, span.hi()),
         one_line_budget,
     ));
 
@@ -1128,7 +1128,7 @@ fn format_tuple_struct(
     let body_lo = if fields.is_empty() {
         context.codemap.span_after(span, "(")
     } else {
-        fields[0].span.lo
+        fields[0].span.lo()
     };
     let body_hi = if fields.is_empty() {
         context.codemap.span_after(span, ")")
@@ -1136,11 +1136,11 @@ fn format_tuple_struct(
         // This is a dirty hack to work around a missing `)` from the span of the last field.
         let last_arg_span = fields[fields.len() - 1].span;
         if context.snippet(last_arg_span).ends_with(")") {
-            last_arg_span.hi
+            last_arg_span.hi()
         } else {
             context
                 .codemap
-                .span_after(mk_sp(last_arg_span.hi, span.hi), ")")
+                .span_after(mk_sp(last_arg_span.hi(), span.hi()), ")")
         }
     };
 
@@ -1148,7 +1148,7 @@ fn format_tuple_struct(
         Some(generics) => {
             let budget = context.budget(last_line_width(&header_str));
             let shape = Shape::legacy(budget, offset);
-            let g_span = mk_sp(span.lo, body_lo);
+            let g_span = mk_sp(span.lo(), body_lo);
             let generics_str = try_opt!(rewrite_generics(context, generics, shape, g_span));
             result.push_str(&generics_str);
 
@@ -1239,7 +1239,7 @@ pub fn rewrite_type_alias(
 
     // 2 = `= `
     let shape = try_opt!(Shape::indented(indent + result.len(), context.config).sub_width(2));
-    let g_span = mk_sp(context.codemap.span_after(span, "type"), ty.span.lo);
+    let g_span = mk_sp(context.codemap.span_after(span, "type"), ty.span.lo());
     let generics_str = try_opt!(rewrite_generics(context, generics, shape, g_span));
     result.push_str(&generics_str);
 
@@ -1257,8 +1257,8 @@ pub fn rewrite_type_alias(
         Shape::legacy(where_budget, indent),
         context.config.where_density(),
         "=",
-        Some(span.hi),
-        generics.span.hi,
+        Some(span.hi()),
+        generics.span.hi(),
         option,
     ));
     result.push_str(&where_clause_str);
@@ -1356,7 +1356,7 @@ pub fn rewrite_struct_field(
     lhs_max_width: usize,
 ) -> Option<String> {
     if contains_skip(&field.attrs) {
-        let span = context.snippet(mk_sp(field.attrs[0].span.lo, field.span.hi));
+        let span = context.snippet(mk_sp(field.attrs[0].span.lo(), field.span.hi()));
         return wrap_str(span, context.config.max_width(), shape);
     }
 
@@ -1367,9 +1367,9 @@ pub fn rewrite_struct_field(
     let attrs_extendable = attrs_str.is_empty() ||
         (context.config.attributes_on_same_line_as_field() && is_attributes_extendable(&attrs_str));
     let missing_span = if field.attrs.is_empty() {
-        mk_sp(field.span.lo, field.span.lo)
+        mk_sp(field.span.lo(), field.span.lo())
     } else {
-        mk_sp(field.attrs.last().unwrap().span.hi, field.span.lo)
+        mk_sp(field.attrs.last().unwrap().span.hi(), field.span.lo())
     };
     let mut spacing = String::from(if field.ident.is_some() {
         type_annotation_spacing.1
@@ -1666,17 +1666,17 @@ fn explicit_self_mutability(arg: &ast::Arg) -> ast::Mutability {
 
 pub fn span_lo_for_arg(arg: &ast::Arg) -> BytePos {
     if is_named_arg(arg) {
-        arg.pat.span.lo
+        arg.pat.span.lo()
     } else {
-        arg.ty.span.lo
+        arg.ty.span.lo()
     }
 }
 
 pub fn span_hi_for_arg(context: &RewriteContext, arg: &ast::Arg) -> BytePos {
     match arg.ty.node {
-        ast::TyKind::Infer if context.snippet(arg.ty.span) == "_" => arg.ty.span.hi,
-        ast::TyKind::Infer if is_named_arg(arg) => arg.pat.span.hi,
-        _ => arg.ty.span.hi,
+        ast::TyKind::Infer if context.snippet(arg.ty.span) == "_" => arg.ty.span.hi(),
+        ast::TyKind::Infer if is_named_arg(arg) => arg.pat.span.hi(),
+        _ => arg.ty.span.hi(),
     }
 }
 
@@ -1742,7 +1742,7 @@ fn rewrite_fn_base(
         indent: indent,
         offset: used_width,
     };
-    let g_span = mk_sp(span.lo, fd.output.span().lo);
+    let g_span = mk_sp(span.lo(), fd.output.span().lo());
     let generics_str = try_opt!(rewrite_generics(context, generics, shape, g_span));
     result.push_str(&generics_str);
 
@@ -1810,15 +1810,19 @@ fn rewrite_fn_base(
     let args_start = generics
         .ty_params
         .last()
-        .map_or(span.lo, |tp| end_typaram(tp));
+        .map_or(span.lo(), |tp| end_typaram(tp));
     let args_end = if fd.inputs.is_empty() {
-        context.codemap.span_after(mk_sp(args_start, span.hi), ")")
+        context
+            .codemap
+            .span_after(mk_sp(args_start, span.hi()), ")")
     } else {
-        let last_span = mk_sp(fd.inputs[fd.inputs.len() - 1].span().hi, span.hi);
+        let last_span = mk_sp(fd.inputs[fd.inputs.len() - 1].span().hi(), span.hi());
         context.codemap.span_after(last_span, ")")
     };
     let args_span = mk_sp(
-        context.codemap.span_after(mk_sp(args_start, span.hi), "("),
+        context
+            .codemap
+            .span_after(mk_sp(args_start, span.hi()), "("),
         args_end,
     );
     let arg_str = try_opt!(rewrite_args(
@@ -1930,9 +1934,9 @@ fn rewrite_fn_base(
         }
 
         // Comment between return type and the end of the decl.
-        let snippet_lo = fd.output.span().hi;
+        let snippet_lo = fd.output.span().hi();
         if where_clause.predicates.is_empty() {
-            let snippet_hi = span.hi;
+            let snippet_hi = span.hi();
             let snippet = context.snippet(mk_sp(snippet_lo, snippet_hi));
             // Try to preserve the layout of the original snippet.
             let original_starts_with_newline = snippet
@@ -1963,8 +1967,8 @@ fn rewrite_fn_base(
     };
 
     let pos_before_where = match fd.output {
-        ast::FunctionRetTy::Default(..) => args_span.hi,
-        ast::FunctionRetTy::Ty(ref ty) => ty.span.hi,
+        ast::FunctionRetTy::Default(..) => args_span.hi(),
+        ast::FunctionRetTy::Ty(ref ty) => ty.span.hi(),
     };
 
     if where_clause.predicates.len() == 1 && should_compress_where {
@@ -1980,7 +1984,7 @@ fn rewrite_fn_base(
             Shape::legacy(budget, indent),
             Density::Compressed,
             "{",
-            Some(span.hi),
+            Some(span.hi()),
             pos_before_where,
             WhereClauseOption::compressed(),
         ) {
@@ -1998,7 +2002,7 @@ fn rewrite_fn_base(
         Shape::indented(indent, context.config),
         Density::Tall,
         "{",
-        Some(span.hi),
+        Some(span.hi()),
         pos_before_where,
         option,
     ));
@@ -2006,7 +2010,7 @@ fn rewrite_fn_base(
     // args and `{`.
     if where_clause_str.is_empty() {
         if let ast::FunctionRetTy::Default(ret_span) = fd.output {
-            let sp = mk_sp(args_span.hi, ret_span.hi);
+            let sp = mk_sp(args_span.hi(), ret_span.hi());
             let missing_snippet = context.snippet(sp);
             let trimmed_snippet = missing_snippet.trim();
             let missing_comment = if trimmed_snippet.is_empty() {
@@ -2120,15 +2124,15 @@ fn rewrite_args(
     if args.len() >= min_args || variadic {
         let comment_span_start = if min_args == 2 {
             let second_arg_start = if arg_has_pattern(&args[1]) {
-                args[1].pat.span.lo
+                args[1].pat.span.lo()
             } else {
-                args[1].ty.span.lo
+                args[1].ty.span.lo()
             };
-            let reduced_span = mk_sp(span.lo, second_arg_start);
+            let reduced_span = mk_sp(span.lo(), second_arg_start);
 
             context.codemap.span_after_last(reduced_span, ",")
         } else {
-            span.lo
+            span.lo()
         };
 
         enum ArgumentKind<'a> {
@@ -2137,7 +2141,7 @@ fn rewrite_args(
         }
 
         let variadic_arg = if variadic {
-            let variadic_span = mk_sp(args.last().unwrap().ty.span.hi, span.hi);
+            let variadic_span = mk_sp(args.last().unwrap().ty.span.hi(), span.hi());
             let variadic_start = context.codemap.span_after(variadic_span, "...") - BytePos(3);
             Some(ArgumentKind::Variadic(variadic_start))
         } else {
@@ -2156,7 +2160,7 @@ fn rewrite_args(
                 ArgumentKind::Variadic(start) => start,
             },
             |arg| match *arg {
-                ArgumentKind::Regular(arg) => arg.ty.span.hi,
+                ArgumentKind::Regular(arg) => arg.ty.span.hi(),
                 ArgumentKind::Variadic(start) => start + BytePos(3),
             },
             |arg| match *arg {
@@ -2164,7 +2168,7 @@ fn rewrite_args(
                 ArgumentKind::Variadic(..) => Some("...".to_owned()),
             },
             comment_span_start,
-            span.hi,
+            span.hi(),
             false,
         );
 
@@ -2353,11 +2357,11 @@ fn rewrite_generics_inner(
     // Extract comments between generics.
     let lt_spans = lifetimes.iter().map(|l| {
         let hi = if l.bounds.is_empty() {
-            l.lifetime.span.hi
+            l.lifetime.span.hi()
         } else {
-            l.bounds[l.bounds.len() - 1].span.hi
+            l.bounds[l.bounds.len() - 1].span.hi()
         };
-        mk_sp(l.lifetime.span.lo, hi)
+        mk_sp(l.lifetime.span.lo(), hi)
     });
     let ty_spans = tys.iter().map(|ty| ty.span());
 
@@ -2365,12 +2369,12 @@ fn rewrite_generics_inner(
         context.codemap,
         lt_spans.chain(ty_spans).zip(lt_strs.chain(ty_strs)),
         ">",
-        |&(sp, _)| sp.lo,
-        |&(sp, _)| sp.hi,
+        |&(sp, _)| sp.lo(),
+        |&(sp, _)| sp.hi(),
         // FIXME: don't clone
         |&(_, ref str)| str.clone(),
         context.codemap.span_after(span, "<"),
-        span.hi,
+        span.hi(),
         false,
     );
     format_generics_item_list(context, items, shape, one_line_width)
@@ -2501,18 +2505,18 @@ fn rewrite_where_clause_rfc_style(
 
     let clause_shape = block_shape.block_indent(context.config.tab_spaces());
     // each clause on one line, trailing comma (except if suppress_comma)
-    let span_start = where_clause.predicates[0].span().lo;
+    let span_start = where_clause.predicates[0].span().lo();
     // If we don't have the start of the next span, then use the end of the
     // predicates, but that means we miss comments.
     let len = where_clause.predicates.len();
-    let end_of_preds = where_clause.predicates[len - 1].span().hi;
+    let end_of_preds = where_clause.predicates[len - 1].span().hi();
     let span_end = span_end.unwrap_or(end_of_preds);
     let items = itemize_list(
         context.codemap,
         where_clause.predicates.iter(),
         terminator,
-        |pred| pred.span().lo,
-        |pred| pred.span().hi,
+        |pred| pred.span().lo(),
+        |pred| pred.span().hi(),
         |pred| pred.rewrite(context, block_shape),
         span_start,
         span_end,
@@ -2603,18 +2607,18 @@ fn rewrite_where_clause(
     // be out by a char or two.
 
     let budget = context.config.max_width() - offset.width();
-    let span_start = where_clause.predicates[0].span().lo;
+    let span_start = where_clause.predicates[0].span().lo();
     // If we don't have the start of the next span, then use the end of the
     // predicates, but that means we miss comments.
     let len = where_clause.predicates.len();
-    let end_of_preds = where_clause.predicates[len - 1].span().hi;
+    let end_of_preds = where_clause.predicates[len - 1].span().hi();
     let span_end = span_end.unwrap_or(end_of_preds);
     let items = itemize_list(
         context.codemap,
         where_clause.predicates.iter(),
         terminator,
-        |pred| pred.span().lo,
-        |pred| pred.span().hi,
+        |pred| pred.span().lo(),
+        |pred| pred.span().hi(),
         |pred| pred.rewrite(context, Shape::legacy(budget, offset)),
         span_start,
         span_end,
@@ -2677,10 +2681,10 @@ fn missing_span_before_after_where(
     before_item_span_end: BytePos,
     where_clause: &ast::WhereClause,
 ) -> (Span, Span) {
-    let missing_span_before = mk_sp(before_item_span_end, where_clause.span.lo);
+    let missing_span_before = mk_sp(before_item_span_end, where_clause.span.lo());
     // 5 = `where`
-    let pos_after_where = where_clause.span.lo + BytePos(5);
-    let missing_span_after = mk_sp(pos_after_where, where_clause.predicates[0].span().lo);
+    let pos_after_where = where_clause.span.lo() + BytePos(5);
+    let missing_span_after = mk_sp(pos_after_where, where_clause.predicates[0].span().lo());
     (missing_span_before, missing_span_after)
 }
 
@@ -2748,8 +2752,8 @@ fn format_generics(
             Shape::legacy(budget, offset.block_only()),
             Density::Tall,
             terminator,
-            Some(span.hi),
-            generics.span.hi,
+            Some(span.hi()),
+            generics.span.hi(),
             option,
         ));
         result.push_str(&where_clause_str);
@@ -2790,7 +2794,7 @@ impl Rewrite for ast::ForeignItem {
         let attrs_str = try_opt!(self.attrs.rewrite(context, shape));
         // Drop semicolon or it will be interpreted as comment.
         // FIXME: this may be a faulty span from libsyntax.
-        let span = mk_sp(self.span.lo, self.span.hi - BytePos(1));
+        let span = mk_sp(self.span.lo(), self.span.hi() - BytePos(1));
 
         let item_str = try_opt!(match self.node {
             ast::ForeignItemKind::Fn(ref fn_decl, ref generics) => {
@@ -2835,9 +2839,9 @@ impl Rewrite for ast::ForeignItem {
         });
 
         let missing_span = if self.attrs.is_empty() {
-            mk_sp(self.span.lo, self.span.lo)
+            mk_sp(self.span.lo(), self.span.lo())
         } else {
-            mk_sp(self.attrs[self.attrs.len() - 1].span.hi, self.span.lo)
+            mk_sp(self.attrs[self.attrs.len() - 1].span.hi(), self.span.lo())
         };
         combine_strs_with_missing_comments(
             context,
