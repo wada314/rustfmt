@@ -2790,6 +2790,10 @@ impl Rewrite for ast::ForeignItem {
                     format!("{}{}{};", prefix, sep, ty_str)
                 })
             }
+            ast::ForeignItemKind::Ty => {
+                let vis = format_visibility(&self.vis);
+                Some(format!("{}type {};", vis, self.ident))
+            }
         });
 
         let missing_span = if self.attrs.is_empty() {
