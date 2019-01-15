@@ -254,7 +254,6 @@ mod test {
     use super::{break_string, detect_url, rewrite_string, SnippetState, StringFormat};
     use config::Config;
     use shape::{Indent, Shape};
-    use unicode_segmentation::UnicodeSegmentation;
 
     #[test]
     fn issue343() {
@@ -266,7 +265,7 @@ mod test {
     #[test]
     fn should_break_on_whitespace() {
         //                           16  20
-        //                            v   v    
+        //                            v   v
         let string = "Placerat felis. Mauris porta ante sagittis purus.";
         assert_eq!(break_string(20, string), SnippetState::LineEnd(16));
     }
