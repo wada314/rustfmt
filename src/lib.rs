@@ -32,6 +32,7 @@ extern crate toml;
 extern crate unicode_categories;
 extern crate unicode_segmentation;
 extern crate unicode_width;
+extern crate xi_unicode;
 
 use std::cell::RefCell;
 use std::collections::HashMap;

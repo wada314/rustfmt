@@ -13,6 +13,7 @@
 use regex::Regex;
 use unicode_categories::UnicodeCategories;
 use unicode_segmentation::UnicodeSegmentation;
+use xi_unicode::LineBreakIterator;
 
 use config::Config;
 use shape::Shape;
