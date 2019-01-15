@@ -87,9 +87,7 @@ pub fn rewrite_string<'a>(
     let strip_line_breaks_re = Regex::new(r"([^\\](\\\\)*)\\[\n\r][[:space:]]*").unwrap();
     let stripped_str = strip_line_breaks_re.replace_all(orig, "$1");
 
-    let graphemes = UnicodeSegmentation::graphemes(&*stripped_str, false).collect::<Vec<&str>>();
-
-    // `cur_start` is the position in `orig` of the start of the current line.
+    // `cur_start` is the position in `stripped_str` of the start of the current line.
     let mut cur_start = 0;
     let mut result = String::with_capacity(
         stripped_str
@@ -104,41 +102,18 @@ pub fn rewrite_string<'a>(
     let mut cur_max_width = max_width_with_indent;
     let is_bareline_ok = fmt.line_start.is_empty() || is_whitespace(fmt.line_start);
     loop {
-        // All the input starting at cur_start fits on the current line
-        if graphemes_width(&graphemes[cur_start..]) <= cur_max_width {
-            for (i, grapheme) in graphemes[cur_start..].iter().enumerate() {
-                if is_new_line(grapheme) {
-                    // take care of blank lines
-                    result = trim_end_but_line_feed(fmt.trim_end, result);
-                    result.push_str("\n");
-                    if !is_bareline_ok && cur_start + i + 1 < graphemes.len() {
-                        result.push_str(&indent_without_newline);
-                        result.push_str(fmt.line_start);
-                    }
-                } else {
-                    result.push_str(grapheme);
-                }
-            }
-            result = trim_end_but_line_feed(fmt.trim_end, result);
-            break;
-        }
-
-        // The input starting at cur_start needs to be broken
-        match break_string(
-            cur_max_width,
-            fmt.trim_end,
-            fmt.line_end,
-            &graphemes[cur_start..],
-        ) {
-            SnippetState::LineEnd(line, len) => {
-                result.push_str(&line);
+        match break_string(cur_max_width, &stripped_str[cur_start..]) {
+            SnippetState::LineEnd(len) => {
+                let line = &stripped_str[cur_start..(cur_start + len)];
+                result.push_str(if fmt.trim_end { line.trim_end() } else { line });
                 result.push_str(fmt.line_end);
                 result.push_str(&indent_with_newline);
                 result.push_str(fmt.line_start);
                 cur_max_width = newline_max_chars;
                 cur_start += len;
             }
-            SnippetState::EndWithLineFeed(line, len) => {
+            SnippetState::EndWithLineFeed(len) => {
+                let line = &stripped_str[cur_start..(cur_start + len)];
                 if line == "\n" && fmt.trim_end {
                     result = result.trim_end().to_string();
                 }
@@ -153,13 +128,14 @@ pub fn rewrite_string<'a>(
                 }
                 cur_start += len;
             }
-            SnippetState::EndOfInput(line) => {
-                result.push_str(&line);
+            SnippetState::EndOfInput() => {
+                result.push_str(&stripped_str[cur_start..]);
                 break;
             }
         }
     }
 
+    result = trim_end_but_line_feed(fmt.trim_end, result);
     result.push_str(fmt.closer);
     wrap_str(result, fmt.config.max_width(), fmt.shape)
 }
@@ -202,143 +178,75 @@ fn trim_end_but_line_feed(trim_end: bool, result: String) -> String {
 /// The state informs about what to do with the snippet and how to continue the breaking process.
 #[derive(Debug, PartialEq)]
 enum SnippetState {
-    /// The input could not be broken and so rewriting the string is finished.
-    EndOfInput(String),
+    /// The input could not / do not needed to be broken and so rewriting the string is finished.
+    EndOfInput(),
     /// The input could be broken and the returned snippet should be ended with a
     /// `[StringFormat::line_end]`. The next snippet needs to be indented.
     ///
-    /// The returned string is the line to print out and the number is the length that got read in
-    /// the text being rewritten. That length may be greater than the returned string if trailing
-    /// whitespaces got trimmed.
-    LineEnd(String, usize),
+    /// The returned number is the index where should the newline to be inserted. The caller may
+    /// want to trim the end spaces by themselves.
+    LineEnd(usize),
     /// The input could be broken but a newline is present that cannot be trimmed. The next snippet
     /// to be rewritten *could* use more width than what is specified by the given shape. For
     /// example with a multiline string, the next snippet does not need to be indented, allowing
     /// more characters to be fit within a line.
     ///
-    /// The returned string is the line to print out and the number is the length that got read in
-    /// the text being rewritten.
-    EndWithLineFeed(String, usize),
+    /// The returned number is the index *after* the newline. So the `string[..index]` contains
+    /// the main text contents, maybe whitespaces, and a newline in this order.
+    EndWithLineFeed(usize),
 }
 
 fn not_whitespace_except_line_feed(g: &str) -> bool {
     is_new_line(g) || !is_whitespace(g)
 }
 
-/// Break the input string at a boundary character around the offset `max_width`. A boundary
-/// character is either a punctuation or a whitespace.
-/// FIXME(issue#3281): We must follow UAX#14 algorithm instead of this.
-fn break_string(max_width: usize, trim_end: bool, line_end: &str, input: &[&str]) -> SnippetState {
-    let break_at = |index /* grapheme at index is included */| {
-        // Take in any whitespaces to the left/right of `input[index]` while
-        // preserving line feeds
-        let index_minus_ws = input[0..=index]
-            .iter()
-            .rposition(|grapheme| not_whitespace_except_line_feed(grapheme))
-            .unwrap_or(index);
-        // Take into account newlines occurring in input[0..=index], i.e., the possible next new
-        // line. If there is one, then text after it could be rewritten in a way that the available
-        // space is fully used.
-        for (i, grapheme) in input[0..=index].iter().enumerate() {
-            if is_new_line(grapheme) {
-                if i <= index_minus_ws {
-                    let mut line = &input[0..i].concat()[..];
-                    if trim_end {
-                        line = line.trim_end();
-                    }
-                    return SnippetState::EndWithLineFeed(format!("{}\n", line), i + 1);
-                }
-                break;
+/// Break the input string at a boundary character around the offset `max_width` using UAX#14
+/// algorithm. The input string can be a shorter string than max_width; then this function just
+/// returns `EndOfInput` state.
+/// To say more precisely, this function first tries to return a last line break opportunity
+/// position `i` where
+/// ```
+/// input[..i].trim_end().len() <= max_width
+/// ```.
+/// If `i == 0`, i.e. there's no place to line break within max_width, then return the first
+/// line break opportunity position.
+fn break_string(mut max_width: usize, input: &str) -> SnippetState {
+    let mut prev_breakable_index = 0;
+    for (index, is_hard_line_break) in LineBreakIterator::new(input) {
+        if is_hard_line_break {
+            if index == input.len() - 1 {
+                // End of the buffer is considered as a hard line break.
+                return SnippetState::EndOfInput();
+            } else {
+                // After "\n". Break immediately.
+                return SnippetState::EndWithLineFeed(index);
             }
         }
 
-        let mut index_plus_ws = index;
-        for (i, grapheme) in input[index + 1..].iter().enumerate() {
-            if !trim_end && is_new_line(grapheme) {
-                return SnippetState::EndWithLineFeed(
-                    input[0..=index + 1 + i].concat(),
-                    index + 2 + i,
-                );
-            } else if not_whitespace_except_line_feed(grapheme) {
-                index_plus_ws = index + i;
-                break;
+        if input[..index].trim_end().len() > max_width {
+            if let Some(url_index_end) = detect_url(input, index) {
+                // An exceptional case for URL. If the URL is overrunning the max_width limit,
+                // then we allow that URL to stay in the current line.
+                // Then the line break position will be after the URL (+ maybe spaces).
+                max_width = url_index_end;
+                continue;
+            }
+
+            // We overrun the max_width at this line break opportunity position. Return the
+            // previous line break opportunity position which is <= max_width.
+            if prev_breakable_index != 0 {
+                return SnippetState::LineEnd(prev_breakable_index);
+            } else {
+                // We overrun the max_width at the first line break opportunity position (maybe
+                // there's a very long word is coming at first).
+                return SnippetState::LineEnd(index);
             }
         }
 
-        if trim_end {
-            SnippetState::LineEnd(input[0..=index_minus_ws].concat(), index_plus_ws + 1)
-        } else {
-            SnippetState::LineEnd(input[0..=index_plus_ws].concat(), index_plus_ws + 1)
-        }
-    };
-
-    // find a first index where the unicode width of input[0..x] become > max_width
-    let max_width_index_in_input = {
-        let mut cur_width = 0;
-        let mut cur_index = 0;
-        for (i, grapheme) in input.iter().enumerate() {
-            cur_width += unicode_str_width(grapheme);
-            cur_index = i;
-            if cur_width > max_width {
-                break;
-            }
-        }
-        cur_index
-    };
-
-    // Find the position in input for breaking the string
-    if line_end.is_empty()
-        && trim_end
-        && !is_whitespace(input[max_width_index_in_input - 1])
-        && is_whitespace(input[max_width_index_in_input])
-    {
-        // At a breaking point already
-        // The line won't invalidate the rewriting because:
-        // - no extra space needed for the line_end character
-        // - extra whitespaces to the right can be trimmed
-        return break_at(max_width_index_in_input - 1);
-    }
-    if let Some(url_index_end) = detect_url(&input.concat(), max_width_index_in_input) {
-        unimplemented!();
-        let index_plus_ws = url_index_end
-            + input[url_index_end..]
-                .iter()
-                .skip(1)
-                .position(|grapheme| not_whitespace_except_line_feed(grapheme))
-                .unwrap_or(0);
-        return if trim_end {
-            SnippetState::LineEnd(input[..=url_index_end].concat(), index_plus_ws + 1)
-        } else {
-            return SnippetState::LineEnd(input[..=index_plus_ws].concat(), index_plus_ws + 1);
-        };
+        prev_breakable_index = index;
     }
 
-    match input[0..max_width_index_in_input]
-        .iter()
-        .rposition(|grapheme| is_whitespace(grapheme))
-    {
-        // Found a whitespace and what is on its left side is big enough.
-        Some(index) if index >= MIN_STRING => break_at(index),
-        // No whitespace found, try looking for a punctuation instead
-        _ => match input[0..max_width_index_in_input]
-            .iter()
-            .rposition(|grapheme| is_punctuation(grapheme))
-        {
-            // Found a punctuation and what is on its left side is big enough.
-            Some(index) if index >= MIN_STRING => break_at(index),
-            // Either no boundary character was found to the left of `input[max_chars]`, or the line
-            // got too small. We try searching for a boundary character to the right.
-            _ => match input[max_width_index_in_input..]
-                .iter()
-                .position(|grapheme| is_whitespace(grapheme) || is_punctuation(grapheme))
-            {
-                // A boundary was found after the line limit
-                Some(index) => break_at(max_width_index_in_input + index),
-                // No boundary to the right, the input cannot be broken
-                None => SnippetState::EndOfInput(input.concat()),
-            },
-        },
-    }
+    unreachable!();
 }
 
 fn is_new_line(grapheme: &str) -> bool {
