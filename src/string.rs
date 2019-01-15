@@ -166,21 +166,18 @@ pub fn rewrite_string<'a>(
 
 /// Returns the index to the end of the url if the given string includes an
 /// URL or alike. Otherwise, returns None;
-fn detect_url(s: &[&str], index: usize) -> Option<usize> {
-    let start = match s[..=index].iter().rposition(|g| is_whitespace(g)) {
+fn detect_url(s: &str, index: usize) -> Option<usize> {
+    let start = match s[..=index].rfind(char::is_whitespace) {
         Some(pos) => pos + 1,
         None => 0,
     };
-    if s.len() < start + 8 {
-        return None;
-    }
-    let prefix = s[start..start + 8].concat();
-    if prefix.starts_with("https://")
-        || prefix.starts_with("http://")
-        || prefix.starts_with("ftp://")
-        || prefix.starts_with("file://")
+    let last_word = &s[start..];
+    if last_word.starts_with("https://")
+        || last_word.starts_with("http://")
+        || last_word.starts_with("ftp://")
+        || last_word.starts_with("file://")
     {
-        match s[index..].iter().position(|g| is_whitespace(g)) {
+        match last_word.find(char::is_whitespace) {
             Some(pos) => Some(index + pos - 1),
             None => Some(s.len() - 1),
         }
@@ -301,7 +298,8 @@ fn break_string(max_width: usize, trim_end: bool, line_end: &str, input: &[&str]
         // - extra whitespaces to the right can be trimmed
         return break_at(max_width_index_in_input - 1);
     }
-    if let Some(url_index_end) = detect_url(input, max_width_index_in_input) {
+    if let Some(url_index_end) = detect_url(&input.concat(), max_width_index_in_input) {
+        unimplemented!();
         let index_plus_ws = url_index_end
             + input[url_index_end..]
                 .iter()
